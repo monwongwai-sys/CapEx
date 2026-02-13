@@ -42,16 +42,20 @@ def load_data():
         column_map = {
             'โครงการ': 'Project', 'งบประมาณ': 'Budget', 'โรงงาน': 'Factory',
             'ประเภท': 'Category', 'วัตถุประสงค์': 'Objective',
-            'ประโยชน์ที่ได้รับ': 'Benefits', '%IRR/NPV/PB': 'Financial_Data'
+            'ประโยชน์ที่ได้รับ': 'Benefits', '%IRR/NPV/PB': 'Financial_Data',
+            '%ความคืบหน้า': 'Progress'
         }
         df = df.rename(columns=column_map)
         
-        # คลีนข้อมูล: ตัดช่องว่างหน้า-หลังชื่อโรงงานและประเภท เพื่อป้องกันชื่อซ้ำ
         df['Factory'] = df['Factory'].astype(str).str.strip()
         df['Category'] = df['Category'].astype(str).str.strip()
-        
         df['Budget'] = pd.to_numeric(df['Budget'], errors='coerce').fillna(0)
         
+        if 'Progress' in df.columns:
+            df['Progress'] = pd.to_numeric(df['Progress'], errors='coerce').fillna(0)
+        else:
+            df['Progress'] = 0
+
         def extract_irr(val):
             if pd.isna(val) or val == '-': return None
             match = re.search(r"[-+]?\d*\.\d+|\d+", str(val))
@@ -78,16 +82,13 @@ if df is not None:
         </div>
     """, unsafe_allow_html=True)
 
-    # --- Dashboard Controls (ติ๊กถูกใน Expander) ---
+    # --- Dashboard Controls ---
     with st.expander("⚙️ Dashboard Controls", expanded=True):
         c1, c2 = st.columns(2)
-        
         with c1:
             st.write("**Select Factory**")
-            # ดึง Unique Factory ที่คลีนแล้วมาแสดง
             factories = sorted([f for f in df["Factory"].unique() if f != 'nan'])
             selected_factories = [f for f in factories if st.checkbox(f, value=True, key=f"f_{f}")]
-            
         with c2:
             st.write("**Select Category**")
             categories = sorted([c for c in df["Category"].unique() if c != 'nan'])
@@ -109,7 +110,7 @@ if df is not None:
 
         st.markdown("---")
         
-        # --- Charts ---
+        # --- Charts Row 1 ---
         col1, col2 = st.columns([2, 1])
         with col1:
             st.write("**Budget by Project**")
@@ -147,6 +148,7 @@ if df is not None:
             fig_pie = px.pie(df_filtered, values='Budget', names='Factory', hole=0.4)
             st.plotly_chart(fig_pie, use_container_width=True)
 
+        # --- Charts Row 2 ---
         col3, col4 = st.columns(2)
         with col3:
             st.write("**Budget vs IRR Matrix**")
@@ -170,8 +172,49 @@ if df is not None:
             )
             st.plotly_chart(fig_cat, use_container_width=True)
 
+        # --- กราฟใหม่: PROGRESS TRACKING (%) ---
+        st.markdown("---")
+        st.write("**📈 Project Progress Tracking (%)**")
+        df_prog = df_filtered.sort_values("Progress", ascending=True)
+        
+        fig_prog = px.bar(
+            df_prog, 
+            x="Progress", 
+            y="Project", 
+            orientation='h',
+            color="Progress",
+            color_continuous_scale=[[0, '#ef4444'], [0.5, '#f59e0b'], [1, '#10b981']],
+            range_x=[0, 105],
+            hover_name="Project",
+            # แก้ไขส่วนนี้: เพิ่ม Objective และ Benefits ใน Hover Data ของกราฟ Progress
+            hover_data={
+                "Progress": ":.1f%", 
+                "Factory": True, 
+                "Category": True,
+                "Objective": True,   # เพิ่มวัตถุประสงค์
+                "Benefits": True     # เพิ่มประโยชน์ที่ได้รับ
+            },
+            template="plotly_white"
+        )
+        fig_prog.update_layout(
+            height=min(max(300, len(df_prog) * 35), 800),
+            coloraxis_showscale=False,
+            margin=dict(l=20, r=20, t=20, b=20),
+            xaxis=dict(title="Completion (%)", gridcolor='#f0f0f0'),
+            yaxis=dict(title=""),
+            bargap=0.3
+        )
+        fig_prog.update_traces(
+            texttemplate='%{x}%', 
+            textposition='outside',
+            marker_line_width=0
+        )
+        st.plotly_chart(fig_prog, use_container_width=True)
+
+        # --- Inventory Table ---
         with st.expander("📋 Click to view/hide Project Inventory Table", expanded=True):
-            st.dataframe(df_filtered.drop(columns=['IRR_Value']).fillna('-'), use_container_width=True, hide_index=True)
+            display_df = df_filtered.drop(columns=['IRR_Value']).fillna('-')
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     else:
         st.warning("No data matches selected filters.")
