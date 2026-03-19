@@ -7,7 +7,7 @@ import re
 # 1. Page Configuration
 st.set_page_config(page_title="CapEx 2026 Executive Dashboard", layout="wide")
 
-# CSS สำหรับดีไซน์ขาว-น้ำเงิน และวันที่ขนาดใหญ่
+# CSS สำหรับดีไซน์และวันที่ขนาดใหญ่
 st.markdown("""
     <style>
     header {visibility: hidden;}
@@ -20,7 +20,6 @@ st.markdown("""
         margin-bottom: 5px;
     }
 
-    /* กล่องวันที่: ขนาดใหญ่ แยกบรรทัด มุมขวา */
     .date-box {
         background-color: #ffffff;
         padding: 10px 20px;
@@ -38,7 +37,6 @@ st.markdown("""
         line-height: 1.1;
     }
 
-    /* Progress Card */
     .metric-card {
         background-color: #ffffff;
         padding: 20px;
@@ -79,7 +77,7 @@ def load_data():
 df = load_data()
 
 if df is not None:
-    # --- ส่วนหัวและวันที่ ---
+    # --- Top Row ---
     t_col1, t_col2 = st.columns([3, 1])
     with t_col1:
         st.markdown('<div class="main-title">🏛️ CapEx 2026 Investment Progress</div>', unsafe_allow_html=True)
@@ -92,17 +90,15 @@ if df is not None:
             </div>
         """, unsafe_allow_html=True)
 
-    # --- ส่วน Cards ด้านบน ---
+    # --- Section 1: Progress Cards ---
     def get_stats(reg):
         sub = df[df['Factory'].str.contains(reg, case=False, na=False)]
         return (sub['Progress'].mean(), sub['Budget'].sum()) if not sub.empty else (0, 0)
 
     stats = [
         ("OVERALL", df['Progress'].mean(), df['Budget'].sum()),
-        ("PK", *get_stats("PK")),
-        ("DC", *get_stats("DC")),
-        ("KS/KN", *get_stats("KS|KN")),
-        ("MCE", *get_stats("MCE"))
+        ("PK", *get_stats("PK")), ("DC", *get_stats("DC")),
+        ("KS/KN", *get_stats("KS|KN")), ("MCE", *get_stats("MCE"))
     ]
 
     cols = st.columns(5)
@@ -120,46 +116,48 @@ if df is not None:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --- ส่วนกราฟ Pie และ Scatter ---
+    # --- Section 2: Visual Analytics ---
     c1, c2 = st.columns([1, 1.2])
     with c1:
         st.subheader("📊 Budget Allocation by Factory")
-        fig_pie = px.pie(df, values='Budget', names='Factory', hole=0.5,
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
+        # --- ปรับแต่ง Pie Chart: ตัวอักษรสีขาวขนาดใหญ่ ---
+        fig_pie = px.pie(df, values='Budget', names='Factory', hole=0.4,
+                         color_discrete_sequence=px.colors.qualitative.Bold)
+        
+        fig_pie.update_traces(
+            textposition='inside', 
+            textinfo='percent+label',
+            insidetextfont=dict(size=18, color="white") # ปรับขนาด 18 และสีขาว
+        )
+        fig_pie.update_layout(showlegend=False, margin=dict(t=0, b=0, l=0, r=0))
         st.plotly_chart(fig_pie, use_container_width=True)
+
     with c2:
         st.subheader("🎯 Progress vs. Budget Matrix")
         fig_scatter = px.scatter(df, x="Budget", y="Progress", size="Budget", color="Factory",
                                  hover_name="Project", template="plotly_white")
         st.plotly_chart(fig_scatter, use_container_width=True)
 
-    # --- ส่วนใหม่: กราฟแท่งที่เลือกโรงงานได้ ---
+    # --- Section 3: กราฟแท่งที่เลือกโรงงานได้ ---
     st.markdown("---")
     st.subheader("📈 Project-Specific Progress Tracking")
     
-    # สร้างตัวเลือกโรงงาน (ดึงจากข้อมูลจริงในไฟล์)
     factory_list = ["Show All"] + sorted(df['Factory'].unique().tolist())
     selected_fac = st.selectbox("🎯 Filter Projects by Factory:", factory_list)
 
-    # กรองข้อมูลตามที่เลือก
-    if selected_fac == "Show All":
-        bar_df = df
-    else:
-        bar_df = df[df['Factory'] == selected_fac]
+    bar_df = df if selected_fac == "Show All" else df[df['Factory'] == selected_fac]
 
-    # สร้างกราฟแท่ง
     if not bar_df.empty:
         fig_bar = px.bar(bar_df.sort_values("Progress", ascending=True), 
                          x="Progress", y="Project", orientation='h',
                          color="Progress", color_continuous_scale="Blues",
                          text_auto='.2f')
+        # ปรับสีตัวอักษรบนกราฟแท่งให้เป็นสีขาวด้วยถ้าต้องการความเข้ากัน
+        fig_bar.update_traces(textfont=dict(color="white", size=12))
         fig_bar.update_layout(height=max(400, len(bar_df)*30), plot_bgcolor="white")
         st.plotly_chart(fig_bar, use_container_width=True)
-    else:
-        st.info("No projects found for the selected factory.")
 
-    # ตารางข้อมูล
-    with st.expander("📋 Full Project Inventory"):
+    with st.expander("📋 View Full Project Inventory"):
         st.dataframe(bar_df[['Factory', 'Project', 'Budget', 'Progress']].style.format({
             'Progress': '{:.2f}%', 'Budget': '{:,.0f}'
         }), use_container_width=True)
